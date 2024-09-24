@@ -1,0 +1,6 @@
+id=magisk-frida
+name=MagiskFrida
+version=v16.4.7
+versionCode=160407
+author=test
+description=Run frida-server(my-strong-frida-android) on boot

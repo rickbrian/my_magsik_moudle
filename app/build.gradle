@@ -1,0 +1,208 @@
+
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.security.MessageDigest
+
+plugins {
+    alias(libs.plugins.androidApplication)
+}
+
+android {
+    namespace 'com.org.magisk_module'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.org.magisk_module"
+        minSdk 29
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        //限制使用单个dex
+        multiDexEnabled false
+
+        ndk{
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+    buildFeatures {
+        viewBinding true
+    }
+    ndkVersion '25.2.9519653'
+}
+
+dependencies {
+
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}
+
+afterEvaluate {
+    android.applicationVariants.forEach { buildType ->
+        //获取最新构建得类型
+        def type = buildType.name.capitalize()
+        def typeLow = buildType.name.toLowerCase()
+        //设置压缩文件名称
+        def zipName = "magisk_module_${type}.zip"
+        //设置输出路径
+        def out = file("$rootDir/out")
+        //临时目录
+        def tempPath = file("$out/magisk_module_$type")
+        //生成得zip包得路径
+        def zipPath = file("$out/$zipName")
+
+        if(out.exists()){
+            delete rootProject.buildDir
+            out.deleteDir()
+        }
+        if(!out.exists()){
+            out.mkdirs()
+        }
+
+        //定义一系列的任务 目的 将需要的文件全部打包成一个zip
+        tasks.register("buildTest${type}",Sync){
+            //1.构建app
+            dependsOn("assemble${type}")
+
+            into tempPath
+            def dexPath
+
+            if(typeLow == "release"){
+                dexPath = layout.buildDirectory.dir("intermediates/dex/$typeLow/mergeDex$type")
+                //拷贝到临时路径下的 lib路径
+                from("$buildDir/intermediates/stripped_native_libs/$typeLow/stripReleaseDebugSymbols/out/lib"){
+                    into 'lib'
+                }
+            }
+            else{
+                dexPath = layout.buildDirectory.dir("intermediates/dex/$typeLow/mergeDex$type")
+                from("$buildDir/intermediates/stripped_native_libs/$typeLow/stripDebugDebugSymbols/out/lib") {
+                    into 'lib'
+                }
+            }
+            //指定dex 的路径
+            println("dexPath: ${dexPath.get().getAsFile()}")
+
+            //指定面具模块源文件
+            def modulePath = "$rootDir\\template\\magisk_module"
+
+            //拷贝文件到 TemporaryPath 这个目录
+            from(modulePath)
+
+            //其他任务执行完毕后在执行我
+            doLast {
+                file("$tempPath/zygisk").mkdirs()
+                //移动so到指定路径下
+                fileTree("$tempPath/lib").visit { f ->
+                    if (!f.directory) return
+                    //so的原路径
+                    def srcPath = Paths.get("${f.file.absolutePath}/libmy_module.so")
+                    //目标路径 并重命令
+                    def dstPath = Paths.get("$tempPath/zygisk/${f.path}.so")
+                    Files.move(srcPath, dstPath)
+                }
+
+                //删除临时路径
+                new File("$tempPath/lib").deleteDir()
+
+                //创建framework
+                file("$tempPath/system/framework").mkdirs()
+
+                //暂时考虑只有一个dex
+                def dexFiles = fileTree(dexPath).getFiles().find()
+
+                copy {
+                    //build/intermediates/dex/debug/mergeDexDebug/classes.dex
+                    from dexFiles
+                    rename("classes.dex", "module.dex")
+                    into "$tempPath/system/framework"
+                }
+
+                fileTree("$tempPath").visit { f ->
+                    if (f.directory) return
+
+                    def md = MessageDigest.getInstance("SHA-256")
+                    f.file.eachByte 4096, { bytes, size ->
+                        md.update(bytes, 0, size)
+                    }
+                    file(f.file.path + ".sha256sum").text = md.digest().encodeHex()
+                }
+            }
+        }
+
+
+
+        //打包 zip 任务
+        tasks.register("zip${type}", Zip) {
+            //先执行完构建程序
+            dependsOn("buildTest${type}")
+            //引用面具模块跟目录下的内容
+            from tempPath //module_release
+            //设置压缩文件的名称
+            archiveFileName.set(zipName)
+            //压缩好后放入的路径
+            destinationDirectory.set(file(out))
+
+        }
+
+        //adb push xxx.zip /sdcard/Download/  任务
+        tasks.register("push${type}", Exec) {
+            dependsOn("zip${type}")
+            //设置工作目录 为 zip所在的路径
+            workingDir out
+            //执行命令将 zip包推送到 指定路径
+            commandLine android.adbExecutable, "push", zipPath, "/sdcard/Download/"
+        }
+
+        //使用面具的命令安装这个模块
+        tasks.register("flashM${type}", Exec) {
+            dependsOn("push${type}")
+            //在 shell 中执行 magisk 命令 安装 zip 包
+            commandLine android.adbExecutable, "shell", "su", "-c","magisk --install-module /sdcard/Download/${zipName}"
+        }
+        tasks.register("flashk${type}", Exec) {
+            dependsOn("push${type}")
+            //在 shell 中执行 ksu 命令 安装 zip 包
+            commandLine android.adbExecutable, "shell", "su", "-c","ksud module install /sdcard/Download/${zipName}"
+        }
+
+        //重启手机
+        tasks.register("flashAndReboot${type}", Exec) {
+            dependsOn("flashM${type}")
+            //重启手机
+            commandLine android.adbExecutable, "shell", "reboot"
+
+        }
+
+
+        buildType.assembleProvider.get().finalizedBy("flashAndReboot${type}")
+    }
+}
