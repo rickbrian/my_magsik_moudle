@@ -1,3 +1,3 @@
 #!/sbin/sh
 # MODDIR=${0%/*}
-rm -rf /data/adb/modules/magisk-frida
+rm -rf /data/adb/modules/@magiskModuleId@

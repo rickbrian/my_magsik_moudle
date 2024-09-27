@@ -2,11 +2,14 @@
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.security.MessageDigest
+import org.apache.tools.ant.filters.FixCrLfFilter
+import org.apache.tools.ant.filters.ReplaceTokens
+
 
 plugins {
     alias(libs.plugins.androidApplication)
 }
-
+apply from: file(rootProject.file('module.gradle'))
 android {
     namespace 'com.org.magisk_module'
     compileSdk 34
@@ -113,9 +116,44 @@ afterEvaluate {
 
             //指定面具模块源文件
             def modulePath = "$rootDir\\template\\magisk_module"
+            //拷贝module.prop对指定字段进行替换
+            from(modulePath) {
+                include 'module.prop'
+                expand([
+                        id         : magiskModuleId,
+                        name       : moduleName,
+                        version    : moduleVersion,
+                        versionCode: moduleVersionCode.toString(),
+                        author     : moduleAuthor,
+                        description: moduleDescription,
+                ])
+                filter(FixCrLfFilter.class, eol: FixCrLfFilter.CrLf.newInstance("lf"))
+            }
+            //拷贝verify.sh
+            from(modulePath) {
+                include 'verify.sh'
+            }
+            //拷贝文件夹
+            from("$modulePath/files") {
+                into 'files'
+            }
+            //拷贝*.sh 对指定字段进行替换
+            from(modulePath) {
+                include 'service.sh'
+                include 'customize.sh'
+                include 'uninstall.sh'
+                def tokens = [
+                        "fridaServerName" : fridaServerName,
+                        "fridaServerPort" : fridaServerPort.toString(),
+                        "magiskModuleId" : magiskModuleId
+                ]
+                filter(ReplaceTokens.class, tokens: tokens)
+                filter(FixCrLfFilter.class, eol: FixCrLfFilter.CrLf.newInstance("lf"))
+            }
 
-            //拷贝文件到 TemporaryPath 这个目录
-            from(modulePath)
+            //拷贝 template 全部文件到 out 目录
+            //from(modulePath)
+
 
             //其他任务执行完毕后在执行我
             doLast {
@@ -134,17 +172,15 @@ afterEvaluate {
                 new File("$tempPath/lib").deleteDir()
 
                 //创建framework
-                file("$tempPath/system/framework").mkdirs()
-
+                //file("$tempPath/system/framework").mkdirs()
                 //暂时考虑只有一个dex
-                def dexFiles = fileTree(dexPath).getFiles().find()
-
-                copy {
-                    //build/intermediates/dex/debug/mergeDexDebug/classes.dex
-                    from dexFiles
-                    rename("classes.dex", "module.dex")
-                    into "$tempPath/system/framework"
-                }
+//                def dexFiles = fileTree(dexPath).getFiles().find()
+//                copy {
+//                    //build/intermediates/dex/debug/mergeDexDebug/classes.dex
+//                    from dexFiles
+//                    rename("classes.dex", "module.dex")
+//                    into "$tempPath/system/framework"
+//                }
 
                 fileTree("$tempPath").visit { f ->
                     if (f.directory) return

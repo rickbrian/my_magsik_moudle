@@ -82,14 +82,14 @@ if [ "$FLAVOR" == "zygisk" ]; then
   F_TARGETDIR="$MODPATH/system/bin"
   mkdir -p "$F_TARGETDIR"
   extract "$ZIPFILE" "files/frida-server-$ARCH" "$F_TARGETDIR" true
-  mv "$F_TARGETDIR/frida-server-$ARCH" "$F_TARGETDIR/fs16-4-7"
-  ui_print "- copy my $F_TARGETDIR/fs16-4-7 ok"
+  mv "$F_TARGETDIR/frida-server-$ARCH" "$F_TARGETDIR/@fridaServerName@"
+  ui_print "- copy my $F_TARGETDIR/@fridaServerName@ ok"
 fi
 
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 
-set_perm $MODPATH/system/bin/fs16-4-7 0 2000 0755 u:object_r:system_file:s0
+set_perm $MODPATH/system/bin/@fridaServerName@ 0 2000 0755 u:object_r:system_file:s0
 #set_perm $MODPATH/system/framework/module.dex 0 2000 0755 u:object_r:system_file:s0
 
 ui_print "嘿嘿嘿，安装成功!!!"

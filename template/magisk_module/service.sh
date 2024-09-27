@@ -12,6 +12,6 @@ sleep 5
 
 # restart on crash
 while true; do
-    fs16-4-7 -l 0.0.0.0:12345
+    @fridaServerName@ -l 0.0.0.0:@fridaServerPort@
     sleep 1
 done

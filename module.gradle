@@ -1,0 +1,11 @@
+ext {
+    // Magisk Module
+    magiskModuleId = "magisk-frida"
+    moduleName = "MagiskFrida"
+    moduleVersion = "v16.1.3"
+    moduleVersionCode = 160103
+    moduleAuthor = "test"
+    moduleDescription = "Run frida-server(my-strong-frida-160103-android) on boot."
+    fridaServerName = "fs_160103"
+    fridaServerPort = 12345
+}
